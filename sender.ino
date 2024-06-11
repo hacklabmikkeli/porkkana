@@ -1,14 +1,7 @@
-#include "WiFi.h"
 #include <esp_now.h>
-#include <ESP_Google_Sheet_Client.h>
-
-#define CLIENT_EMAIL "porkana@"
-
-const char* ssid = "SSID";
-const char* password = "verySecurePassword123!";
-
-const char spreadsheetId[] = "sheet id yes";
-const char PRIVATE_KEY[] PROGMEM = "-----BEGIN PRIVATE KEY-----\n-----END PRIVATE KEY-----\n";
+#include <WiFi.h>
+#define DEEP_SLEEP_TIME 1
+uint8_t broadcastAddress[] = {0x30, 0xAE, 0xA4, 0x9A, 0xEA, 0xC0};
 
 typedef struct struct_message {
   float soil;
@@ -18,72 +11,63 @@ typedef struct struct_message {
 
 struct_message data;
 
-void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
-  memcpy(&data, incomingData, sizeof(data));
-  int soilHum = map(data.soil, 239, 595, 100, 0);
-  Serial.print("Bytes received: ");
-  Serial.println(len);
-  Serial.print("Time: ");
-  Serial.println(millis());
-  Serial.print("Soil: ");
-  Serial.println(soilHum);
-  Serial.print("Humidity: ");
-  Serial.println(data.humidity);
-  Serial.print("Temperature: ");
-  Serial.println(data.temp);
-  Serial.println();
-  epochTime = getTime();
-  bool ready = GSheet.ready();
-  if(ready) {
-    FirebaseJson response;
-    FirebaseJson valueRange;
-    valueRange.add("majorDimension", "COLUMNS");
+esp_now_peer_info_t peerInfo;
 
-    valueRange.set("values/[0]/[0]", epochTime+7200); //adds 2hours to time, GMT+2
-    valueRange.set("values/[1]/[0]", data.soil);
-    valueRange.set("values/[2]/[0]", data.humidity);
-    valueRange.set("values/[3]/[0]", data.temp);
+// Data sent callback
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  Serial.print("\r\nLast Packet Send Status:\t");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+}
 
-    bool success = GSheet.values.append(&response /* returned response */, spreadsheetId /* spreadsheet Id to append */, "Sheet1!A1" /* range to append */, &valueRange /* data range to append */);
-    if (success){
-      response.toString(Serial, true);
-      valueRange.clear();
-    }
-    else{
-      Serial.println(GSheet.errorReason());
-    }
+void sendData() {
+  data.soil = random(1, 500) / 100.0;
+  data.humidity = random(1, 500) / 100.0;
+  data.temp = random(1, 500) / 100.0;
+  
+  // Send message via ESP-NOW
+  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &data, sizeof(data));
+   
+  if (result == ESP_OK) {
+    Serial.println("Sent with success");
   }
+  else {
+    Serial.println("Error sending the data");
+  }
+  delay(2000);
 }
 
 void setup() {
   //Initialise ESP
-  Serial.begin(115200);
-  Serial.println(WiFi.macAddress());
-
-  // Set the device as a Station and Soft Access Point simultaneously
-  WiFi.mode(WIFI_AP_STA);
-  
-  // Set device as a Wi-Fi Station
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Setting as a Wi-Fi Station..");
-  }
-  Serial.print("Station IP Address: ");
-  Serial.println(WiFi.localIP());
-  Serial.print("Wi-Fi Channel: ");
-  Serial.println(WiFi.channel());
+  Serial.begin(9600);
+  WiFi.mode(WIFI_STA);
 
   //ESP-NOW
   if (esp_now_init() != ESP_OK) {
     Serial.println("Error initializing ESP-NOW");
     return;
   }
+  esp_now_register_send_cb(OnDataSent);
+
+  // Initialise peer
+  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+  peerInfo.channel = 0;  
+  peerInfo.encrypt = false;
   
-  esp_now_register_recv_cb(OnDataRecv);
+  // Add peer        
+  if (esp_now_add_peer(&peerInfo) != ESP_OK){
+    Serial.println("Failed to add peer");
+    return;
+  }
+
+  sendData();
+
+  uint64_t u64SleepLength = DEEP_SLEEP_TIME * 60L * 1000000L;
+  esp_sleep_enable_timer_wakeup(u64SleepLength);
+  Serial.println("Going to sleep");
+  Serial.flush();
+  esp_deep_sleep_start();
 }
 
-void loop() {
-  // put your main code here, to run repeatedly:
 
+void loop() {
 }
