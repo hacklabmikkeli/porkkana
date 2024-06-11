@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include "WiFi.h"
 #include <esp_now.h>
 #include "time.h"
@@ -12,6 +13,10 @@ const char* ssid = "SSID";
 const char* password = "VERYsecurePaSsWoRd123!";
 const char spreadsheetId[] = "";
 const char PRIVATE_KEY[] PROGMEM = "";
+
+// Token Callback function
+void tokenStatusCallback(TokenInfo info);
+
 // NTP server to request epoch time
 const char* ntpServer = "pool.ntp.org";
 
@@ -72,6 +77,7 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
     else{
       Serial.println(GSheet.errorReason());
     }
+    Serial.println(ESP.getFreeHeap());
   }
 }
 
